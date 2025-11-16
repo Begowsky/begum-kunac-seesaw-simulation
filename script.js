@@ -51,7 +51,7 @@ class SeesawObject {
     this.el.style.height = this.size + "px";
     if (this.x == null || this.y == null) {
       const halfLength = this.plankArea.clientWidth / 2;
-      const landing = -(this.size / 2 - 6);
+      const landing = 6 - this.size;
       this.x = halfLength + this.offsetX - this.size / 2;
       this.y = landing;
     }
@@ -75,6 +75,7 @@ class SeesawSimulation {
     this.plankArea = document.getElementById("plankArea");
     this.plank = document.getElementById("plank");
     this.pivot = document.getElementById("pivot");
+    this.pivotBase = document.getElementById("pivotBase");
     this.leftWeightEl = document.getElementById("leftWeight");
     this.rightWeightEl = document.getElementById("rightWeight");
     this.nextWeightEl = document.getElementById("nextWeight");
@@ -101,6 +102,7 @@ class SeesawSimulation {
     this.bindEvents();
     // this will restore the state
     this.loadState();
+    this.positionPlankRelativeToGround();
     this.positionPivot();
     // after restoring page is shown
     document.body.classList.remove("preload");
@@ -125,20 +127,47 @@ class SeesawSimulation {
     this.plankArea.addEventListener("click", (e) => this.onClick(e));
     window.addEventListener("resize", () => {
       this.renderScale();
+      this.positionPlankRelativeToGround();
       this.positionPivot();
     });
     this.pauseBtn.addEventListener("click", () => this.togglePause());
     this.resetBtn.addEventListener("click", () => this.resetSimulation());
     window.addEventListener("beforeunload", () => this.saveState());
   }
+  positionPlankRelativeToGround() {
+    const wrap = this.plankArea.parentElement;
+    if (!wrap) return;
+    const groundEl = wrap.querySelector(".ground");
+    if (!groundEl) return;
+    const groundTopInWrap = groundEl.offsetTop;
+    const halfLength = this.plankArea.clientWidth / 2;
+    const angleRad = (this.MAX_ANGLE * Math.PI) / 180;
+    const maxDrop = halfLength * Math.sin(angleRad);
+    const areaHeight = this.plankArea.clientHeight;
+    const centerYCurrent = this.plankArea.offsetTop + areaHeight / 2;
+    const centerYNeeded = groundTopInWrap - maxDrop;
+    const delta = centerYNeeded - centerYCurrent;
+    const currentTop = parseFloat(getComputedStyle(this.plankArea).top) || 0;
+    this.plankArea.style.top = (currentTop + delta) + "px";
+  }
   positionPivot() {
     const wrap = this.plankArea.parentElement;
     if (!wrap || !this.pivot) return;
-    const wrapBounds = wrap.getBoundingClientRect();
     const areaBounds = this.plankArea.getBoundingClientRect();
+    const wrapBounds = wrap.getBoundingClientRect();
     const centerY = areaBounds.top + areaBounds.height / 2;
     const topInWrap = centerY - wrapBounds.top;
     this.pivot.style.top = `${topInWrap}px`;
+    const groundEl = wrap.querySelector(".ground");
+    if (groundEl && this.pivotBase) {
+      const groundTopInWrap = groundEl.offsetTop;
+      const triangleHeight = 30;
+      const baseTop = topInWrap + triangleHeight;
+      const extra = 25;
+      const height = Math.max(0, groundTopInWrap - baseTop + extra);
+      this.pivotBase.style.top = `${baseTop}px`;
+      this.pivotBase.style.height = `${height}px`;
+    }
   }
   onClick(e) {
     if (this.isPaused || this.isDropping) return;
@@ -236,6 +265,8 @@ class SeesawSimulation {
     this.isDropping = false;
     this.pauseBtn.textContent = "Pause";
     this.saveState();
+    // this recalculates the geometry after resetting
+    this.positionPlankRelativeToGround();
     this.positionPivot();
   }
   saveState() {

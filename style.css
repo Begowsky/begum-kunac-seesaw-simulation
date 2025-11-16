@@ -53,18 +53,28 @@ body.preload{
 .scene{ flex:1; min-height:420px; display:flex; align-items:center; justify-content:center; position:relative; }
 .seesaw-wrap{ width:760px; height:260px; position:relative; display:flex; align-items:center; justify-content:center; }
 
-.ground{ position:absolute; bottom:20px; left:0; right:0; height:6px; background:linear-gradient(90deg,#c2c7cc,#e6eaee); border-radius:6px; }
+.ground{ position:absolute; bottom:20px; left:0; right:0; height:6px; background:linear-gradient(90deg,#c2c7cc,#e6eaee); border-radius:6px; transform:translateY(20px); z-index:0}
 
 .pivot{
   position:absolute; left:50%; transform:translateX(-50%); width:0; height:0; border-left:22px solid transparent;
-  border-right:22px solid transparent; border-bottom:40px solid var(--pivot);
+  border-right:22px solid transparent; border-bottom:30px solid var(--pivot);
   z-index:30;
 }
+
+.pivot-base{
+  position:absolute;
+  left:50%;
+  transform:translateX(-50%);
+  width:46px;
+  background:var(--pivot);
+  z-index:20;
+ }
 
 .plank-area{
   width:640px; height:24px; position:relative;
   transform-origin:center center;
   cursor:pointer; margin-bottom:60px;
+  z-index:5;
 }
 
 .plank{
@@ -89,6 +99,7 @@ body.preload{
   display:flex; align-items:center; justify-content:center;
   font-weight:700; color:white; font-size:13px;
   box-shadow:none;
+  z-index:10;
 }
 
 .weight::after{
@@ -96,8 +107,9 @@ body.preload{
 }
 
 .bottom-info{
-  position:absolute; bottom:10px; left:50%; transform:translateX(-50%);
+  position:absolute; bottom:-40px; left:50%; transform:translateX(-50%);
   background:rgba(255,255,255,0.9); padding:8px 12px;
   border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,0.06);
   font-size:13px;
+  z-index:25;
 }
