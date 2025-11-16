@@ -26,6 +26,25 @@ html,body{
 .stat strong{ font-size:18px; }
 .small{ font-size:13px; color:#555; }
 
+.controls{
+  display:flex;
+  gap:8px;
+  margin-top:10px;
+}
+.controls button{
+  flex:1;
+  padding:6px 8px;
+  border-radius:6px;
+  border:1px solid #cbd5e0;
+  background:#edf2f7;
+  cursor:pointer;
+  font-size:13px;
+  font-weight:600;
+}
+.controls button:hover{
+  background:#e2e8f0;
+}
+
 .scene{ flex:1; min-height:420px; display:flex; align-items:center; justify-content:center; position:relative; }
 .seesaw-wrap{ width:760px; height:260px; position:relative; display:flex; align-items:center; justify-content:center; }
 
@@ -72,10 +91,9 @@ html,body{
   box-shadow:none;
   transform-origin:center bottom;
 }
+
 .weight::after{
-  content:''; position:absolute; left:50%; bottom:-8px;
-  width:30px; height:6px; transform:translateX(-50%);
-  border-radius:50%; background:rgba(0,0,0,0.12);
+  content:none;
 }
 
 .bottom-info{
