@@ -26,22 +26,39 @@ class TorqueCalculator {
 }
 
 class SeesawObject {
-  constructor(weight, offsetX, plankArea, plankBounds, areaBounds) {
-    this.weight = weight;
-    this.offsetX = offsetX;
+  constructor(params) {
+    this.weight = params.weight;
+    this.offsetX = params.offsetX;
+    this.x = params.x;
+    this.y = params.y;
+    this.color = params.color || this.randomColor();
     this.el = document.createElement("div");
     this.el.className = "weight";
-    this.el.textContent = weight;
-    this.el.style.background = this.randomColor();
-    const x = (plankBounds.left - areaBounds.left) + (plankBounds.width/2 + offsetX) - 22;
-    this.el.style.left = x + "px";
-    this.el.style.top = "-140px";
-    this.el.style.transition = "top 500ms cubic-bezier(.2,.9,.2,1)";
-    plankArea.appendChild(this.el);
-    requestAnimationFrame(() => {
-      const landing = -(44/2 - 6);
-      this.el.style.top = landing + "px";
-    });
+    this.el.textContent = this.weight;
+    this.el.style.background = this.color;
+    this.el.style.position = "absolute";
+    if (this.x == null || this.y == null) {
+      const plankBounds = params.plankBounds;
+      const areaBounds = params.areaBounds;
+      const landing = -(44 / 2 - 6);
+      const x =
+        (plankBounds.left - areaBounds.left) +
+        (plankBounds.width / 2 + this.offsetX) - 22;
+      this.x = x;
+      this.y = landing;
+    }
+    this.el.style.left = this.x + "px";
+    if (params.animateFall) {
+      this.el.style.top = "-140px";
+      this.el.style.transition = "top 500ms cubic-bezier(.2,.9,.2,1)";
+      params.plankArea.appendChild(this.el);
+      requestAnimationFrame(() => {
+        this.el.style.top = this.y + "px";
+      });
+    } else {
+      this.el.style.top = this.y + "px";
+      params.plankArea.appendChild(this.el);
+    }
   }
   remove() {
     if (this.el && this.el.parentNode) {
@@ -55,6 +72,7 @@ class SeesawObject {
 
 class SeesawSimulation {
   constructor() {
+    this.storageKey = "begum-kunac-seesaw";
     this.plankArea = document.getElementById("plankArea");
     this.plank = document.getElementById("plank");
     this.pivot = document.getElementById("pivot");
@@ -81,6 +99,10 @@ class SeesawSimulation {
     this.nextWeightEl.textContent = this.nextWeight + " kg";
     this.renderScale();
     this.bindEvents();
+    // this will restore the state
+    this.loadState();
+    // after restoring page is shown
+    document.body.classList.remove("preload");
     this.animate = this.animate.bind(this);
     requestAnimationFrame(this.animate);
   }
@@ -103,6 +125,7 @@ class SeesawSimulation {
     window.addEventListener("resize", () => this.renderScale());
     this.pauseBtn.addEventListener("click", () => this.togglePause());
     this.resetBtn.addEventListener("click", () => this.resetSimulation());
+    window.addEventListener("beforeunload", () => this.saveState());
   }
   onClick(e) {
     if (this.isPaused) return;
@@ -113,18 +136,23 @@ class SeesawSimulation {
     let offsetFromPivot = localX - plankBounds.width/2;
     if (offsetFromPivot === 0) offsetFromPivot = 5;
     const weight = this.nextWeight;
-    const obj = new SeesawObject(
+    const obj = new SeesawObject({
       weight,
-      offsetFromPivot,
-      this.plankArea,
+      offsetX: offsetFromPivot,
+      plankArea: this.plankArea,
       plankBounds,
-      areaBounds
-    );
+      areaBounds,
+      x: null,
+      y: null,
+      color: null,
+      animateFall: true
+    });
     this.torqueCalc.addObject(obj);
     this.updateTargetAngle();
     // this will generate next weight
     this.nextWeight = this.generateRandomWeight();
     this.nextWeightEl.textContent = this.nextWeight + " kg";
+    this.saveState();
   }
   updateTargetAngle() {
     const t = this.torqueCalc.compute();
@@ -141,6 +169,7 @@ class SeesawSimulation {
   togglePause() {
     this.isPaused = !this.isPaused;
     this.pauseBtn.textContent = this.isPaused ? "Resume" : "Pause";
+    this.saveState();
   }
   resetSimulation() {
     // this will make weight objects disappear
@@ -166,6 +195,71 @@ class SeesawSimulation {
     // it is running
     this.isPaused = false;
     this.pauseBtn.textContent = "Pause";
+    this.saveState();
+  }
+  saveState() {
+    try {
+      const serializableObjects = this.torqueCalc.objects.map((o) => ({
+        weight: o.weight,
+        offsetX: o.offsetX,
+        x: o.x,
+        y: o.y,
+        color: o.color
+      }));
+      const data = {
+        objects: serializableObjects,
+        nextWeight: this.nextWeight,
+        angle: this.angle,
+        targetAngle: this.targetAngle,
+        isPaused: this.isPaused
+      };
+      localStorage.setItem(this.storageKey, JSON.stringify(data));
+    } catch (e) {
+      console.error("Failed to save seesaw state", e);
+    }
+  }
+  loadState() {
+    try {
+      const raw = localStorage.getItem(this.storageKey);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (!data || !Array.isArray(data.objects)) return;
+      this.torqueCalc.clear();
+      for (const o of data.objects) {
+        if (typeof o.weight !== "number" || typeof o.offsetX !== "number") continue;
+        const obj = new SeesawObject({
+          weight: o.weight,
+          offsetX: o.offsetX,
+          plankArea: this.plankArea,
+          plankBounds: null,
+          areaBounds: null,
+          x: o.x,
+          y: o.y,
+          color: o.color,
+          animateFall: false
+        });
+        this.torqueCalc.addObject(obj);
+      }
+      if (typeof data.nextWeight === "number") {
+        this.nextWeight = data.nextWeight;
+      } else {
+        this.nextWeight = this.generateRandomWeight();
+      }
+      this.nextWeightEl.textContent = this.nextWeight + " kg";
+      this.isPaused = !!data.isPaused;
+      this.pauseBtn.textContent = this.isPaused ? "Resume" : "Pause";
+      this.angle = typeof data.angle === "number" ? data.angle : 0;
+      this.targetAngle = typeof data.targetAngle === "number"
+        ? data.targetAngle
+        : this.angle;
+      this.angVel = 0;
+      this.updateTargetAngle();
+      this.plankArea.style.transform = `rotate(${this.angle}deg)`;
+      this.pivot.style.transform = `translateX(-50%) rotate(${-this.angle}deg)`;
+      this.tiltAngleEl.textContent = this.angle.toFixed(2) + "°";
+    } catch (e) {
+      console.error("Failed to load seesaw state", e);
+    }
   }
   animate() {
     if (!this.isPaused) {
