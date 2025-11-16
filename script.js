@@ -1,3 +1,11 @@
+// this function helps to create the weight objects proportional to their weights
+function sizeFromWeight(weight) {
+  const minSize = 26;   // 1 kg
+  const maxSize = 62;   // 10 kg
+  const w = Math.max(1, Math.min(10, weight));
+  return minSize + ((w - 1) * (maxSize - minSize)) / 9;
+}
+
 class TorqueCalculator {
   constructor() {
     this.objects = [];
@@ -29,36 +37,27 @@ class SeesawObject {
   constructor(params) {
     this.weight = params.weight;
     this.offsetX = params.offsetX;
+    this.plankArea = params.plankArea;
+    this.color = params.color || this.randomColor();
+    this.size = sizeFromWeight(this.weight);
     this.x = params.x;
     this.y = params.y;
-    this.color = params.color || this.randomColor();
     this.el = document.createElement("div");
     this.el.className = "weight";
     this.el.textContent = this.weight;
     this.el.style.background = this.color;
     this.el.style.position = "absolute";
+    this.el.style.width = this.size + "px";
+    this.el.style.height = this.size + "px";
     if (this.x == null || this.y == null) {
-      const plankBounds = params.plankBounds;
-      const areaBounds = params.areaBounds;
-      const landing = -(44 / 2 - 6);
-      const x =
-        (plankBounds.left - areaBounds.left) +
-        (plankBounds.width / 2 + this.offsetX) - 22;
-      this.x = x;
+      const halfLength = this.plankArea.clientWidth / 2;
+      const landing = -(this.size / 2 - 6);
+      this.x = halfLength + this.offsetX - this.size / 2;
       this.y = landing;
     }
     this.el.style.left = this.x + "px";
-    if (params.animateFall) {
-      this.el.style.top = "-140px";
-      this.el.style.transition = "top 500ms cubic-bezier(.2,.9,.2,1)";
-      params.plankArea.appendChild(this.el);
-      requestAnimationFrame(() => {
-        this.el.style.top = this.y + "px";
-      });
-    } else {
-      this.el.style.top = this.y + "px";
-      params.plankArea.appendChild(this.el);
-    }
+    this.el.style.top = this.y + "px";
+    this.plankArea.appendChild(this.el);
   }
   remove() {
     if (this.el && this.el.parentNode) {
@@ -93,6 +92,7 @@ class SeesawSimulation {
     this.stiffness = 0.02;
     this.damping = 0.6;
     this.isPaused = false;
+    this.isDropping = false;
     this.torqueCalc = new TorqueCalculator();
     // this will generate first next weight
     this.nextWeight = this.generateRandomWeight();
@@ -101,6 +101,7 @@ class SeesawSimulation {
     this.bindEvents();
     // this will restore the state
     this.loadState();
+    this.positionPivot();
     // after restoring page is shown
     document.body.classList.remove("preload");
     this.animate = this.animate.bind(this);
@@ -122,33 +123,72 @@ class SeesawSimulation {
   }
   bindEvents() {
     this.plankArea.addEventListener("click", (e) => this.onClick(e));
-    window.addEventListener("resize", () => this.renderScale());
+    window.addEventListener("resize", () => {
+      this.renderScale();
+      this.positionPivot();
+    });
     this.pauseBtn.addEventListener("click", () => this.togglePause());
     this.resetBtn.addEventListener("click", () => this.resetSimulation());
     window.addEventListener("beforeunload", () => this.saveState());
   }
-  onClick(e) {
-    if (this.isPaused) return;
-    const plankBounds = this.plank.getBoundingClientRect();
+  positionPivot() {
+    const wrap = this.plankArea.parentElement;
+    if (!wrap || !this.pivot) return;
+    const wrapBounds = wrap.getBoundingClientRect();
     const areaBounds = this.plankArea.getBoundingClientRect();
-    let localX = e.clientX - plankBounds.left;
-    localX = Math.max(0, Math.min(plankBounds.width, localX));
-    let offsetFromPivot = localX - plankBounds.width/2;
-    if (offsetFromPivot === 0) offsetFromPivot = 5;
+    const centerY = areaBounds.top + areaBounds.height / 2;
+    const topInWrap = centerY - wrapBounds.top;
+    this.pivot.style.top = `${topInWrap}px`;
+  }
+  onClick(e) {
+    if (this.isPaused || this.isDropping) return;
+    const rect = this.plankArea.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const dx = e.clientX - centerX;
+    const dy = e.clientY - centerY;
+    const theta = (this.angle * Math.PI) / 180;
+    const proj = dx * Math.cos(theta) + dy * Math.sin(theta);
+    const halfLength = this.plankArea.clientWidth / 2;
+    let offsetFromPivot = Math.max(-halfLength, Math.min(halfLength, proj));
+    if (Math.abs(offsetFromPivot) < 1) {
+      offsetFromPivot = offsetFromPivot >= 0 ? 1 : -1;
+    }
     const weight = this.nextWeight;
     const obj = new SeesawObject({
       weight,
       offsetX: offsetFromPivot,
       plankArea: this.plankArea,
-      plankBounds,
-      areaBounds,
       x: null,
       y: null,
-      color: null,
-      animateFall: true
+      color: null
     });
+    obj.el.style.opacity = "0";
     this.torqueCalc.addObject(obj);
     this.updateTargetAngle();
+    const finalRect = obj.el.getBoundingClientRect();
+    const ghostSize = sizeFromWeight(obj.weight);
+    const ghost = document.createElement("div");
+    ghost.className = "weight";
+    ghost.textContent = obj.weight;
+    ghost.style.background = obj.color;
+    ghost.style.position = "fixed";
+    ghost.style.width = ghostSize + "px";
+    ghost.style.height = ghostSize + "px";
+    ghost.style.left = finalRect.left + "px";
+    ghost.style.top = (finalRect.top - ghostSize * 3) + "px";
+    ghost.style.transition = "top 500ms cubic-bezier(.2,.9,.2,1)";
+    ghost.style.zIndex = "999"; 
+    document.body.appendChild(ghost);
+    this.isDropping = true;
+    requestAnimationFrame(() => {
+      ghost.style.top = finalRect.top + "px";
+    });
+    setTimeout(() => {
+      ghost.remove();
+      obj.el.style.opacity = "1";
+      this.isDropping = false;
+    }, 550);
     // this will generate next weight
     this.nextWeight = this.generateRandomWeight();
     this.nextWeightEl.textContent = this.nextWeight + " kg";
@@ -182,7 +222,6 @@ class SeesawSimulation {
     this.targetAngle = 0;
     this.angVel = 0;
     this.plankArea.style.transform = `rotate(0deg)`;
-    this.pivot.style.transform = `translateX(-50%) rotate(0deg)`;
     this.tiltAngleEl.textContent = "0°";
     // this will reset the seesaw status
     this.leftWeightEl.textContent = "0 kg";
@@ -194,8 +233,10 @@ class SeesawSimulation {
     this.nextWeightEl.textContent = this.nextWeight + " kg";
     // it is running
     this.isPaused = false;
+    this.isDropping = false;
     this.pauseBtn.textContent = "Pause";
     this.saveState();
+    this.positionPivot();
   }
   saveState() {
     try {
@@ -231,12 +272,9 @@ class SeesawSimulation {
           weight: o.weight,
           offsetX: o.offsetX,
           plankArea: this.plankArea,
-          plankBounds: null,
-          areaBounds: null,
           x: o.x,
           y: o.y,
-          color: o.color,
-          animateFall: false
+          color: o.color
         });
         this.torqueCalc.addObject(obj);
       }
@@ -255,20 +293,18 @@ class SeesawSimulation {
       this.angVel = 0;
       this.updateTargetAngle();
       this.plankArea.style.transform = `rotate(${this.angle}deg)`;
-      this.pivot.style.transform = `translateX(-50%) rotate(${-this.angle}deg)`;
       this.tiltAngleEl.textContent = this.angle.toFixed(2) + "°";
     } catch (e) {
       console.error("Failed to load seesaw state", e);
     }
   }
   animate() {
-    if (!this.isPaused) {
+    if (!this.isPaused && !this.isDropping) {
       const diff = this.targetAngle - this.angle;
       this.angVel += diff * this.stiffness;
       this.angVel *= this.damping;
       this.angle += this.angVel;
       this.plankArea.style.transform = `rotate(${this.angle}deg)`;
-      this.pivot.style.transform = `translateX(-50%) rotate(${-this.angle}deg)`;
       this.tiltAngleEl.textContent = this.angle.toFixed(2) + "°";
     }
     requestAnimationFrame(this.animate);

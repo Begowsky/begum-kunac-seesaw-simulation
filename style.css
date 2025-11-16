@@ -56,14 +56,9 @@ body.preload{
 .ground{ position:absolute; bottom:20px; left:0; right:0; height:6px; background:linear-gradient(90deg,#c2c7cc,#e6eaee); border-radius:6px; }
 
 .pivot{
-  position:absolute; width:28px; height:28px; border-radius:50%;
-  background:var(--pivot); bottom:52px; transform:translateX(-14px);
-  z-index:30; box-shadow:0 6px 12px rgba(0,0,0,0.25);
-}
-.pivot::after{
-  content:''; position:absolute; left:50%; top:50%;
-  width:8px; height:8px; background:#f6f6f6;
-  transform:translate(-50%,-50%); border-radius:50%;
+  position:absolute; left:50%; transform:translateX(-50%); width:0; height:0; border-left:22px solid transparent;
+  border-right:22px solid transparent; border-bottom:40px solid var(--pivot);
+  z-index:30;
 }
 
 .plank-area{
@@ -90,11 +85,10 @@ body.preload{
 }
 
 .weight{
-  position:absolute; width:44px; height:44px; border-radius:50%;
+  position:absolute; border-radius:50%;
   display:flex; align-items:center; justify-content:center;
   font-weight:700; color:white; font-size:13px;
   box-shadow:none;
-  transform-origin:center bottom;
 }
 
 .weight::after{
