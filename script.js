@@ -1,3 +1,17 @@
+// weight colors
+const WEIGHT_COLORS = {
+  1: "#ebdc07ff",
+  2: "#ff8c00ff",
+  3: "#FF69B4",
+  4: "#DC143C",
+  5: "#5fd2e6ff",
+  6: "#aa62eaff",
+  7: "#50C878",
+  8: "#4B0082",
+  9: "#01796F",
+  10: "#191970"
+};
+
 // this function helps to create the weight objects proportional to their weights
 function sizeFromWeight(weight) {
   const minSize = 26;   // 1 kg
@@ -38,7 +52,7 @@ class SeesawObject {
     this.weight = params.weight;
     this.offsetX = params.offsetX;
     this.plankArea = params.plankArea;
-    this.color = params.color || this.randomColor();
+    this.color = params.color || WEIGHT_COLORS[this.weight] || this.randomColor();
     this.shapeType = params.shapeType || "circle";
     this.size = sizeFromWeight(this.weight);
     this.x = params.x;
@@ -88,6 +102,7 @@ class SeesawSimulation {
     this.tiltAngleEl = document.getElementById("tiltAngle");
     this.leftTorqueText = document.getElementById("leftTorqueText");
     this.rightTorqueText = document.getElementById("rightTorqueText");
+    this.hoverOffsetEl = document.getElementById("hoverOffsetText");
     this.scale = document.getElementById("scale");
     this.pauseBtn = document.getElementById("pauseBtn");
     this.resetBtn = document.getElementById("resetBtn");
@@ -128,15 +143,18 @@ class SeesawSimulation {
     this.historyIndex = -1;
     this.renderScale();
     this.bindEvents();
-    // this will restore the state
+    // this will restore the state and history
     this.loadState();
     this.positionPlankRelativeToGround();
     this.positionPivot();
     this.updateSliderEnabled();
     // this will render the log
     this.renderLog();
-    this.pushHistory();
-    // after restoring page is shown)
+    // if there is no history loaded, push the initial snapshot
+    if (this.history.length === 0) {
+      this.pushHistory();
+    }
+    // after restoring page is shown
     document.body.classList.remove("preload");
     this.animate = this.animate.bind(this);
     requestAnimationFrame(this.animate);
@@ -162,6 +180,8 @@ class SeesawSimulation {
   }
   bindEvents() {
     this.plankArea.addEventListener("click", (e) => this.onClick(e));
+    this.plankArea.addEventListener("mousemove", (e) => this.onHover(e));
+    this.plankArea.addEventListener("mouseleave", () => this.clearHover());
     window.addEventListener("resize", () => {
       this.renderScale();
       this.positionPlankRelativeToGround();
@@ -184,7 +204,7 @@ class SeesawSimulation {
           this.saveState();
         }
       });
-    })
+    });
     // radios for speed choice
     this.speedRadios.forEach((r) => {
       r.addEventListener("change", (e) => {
@@ -313,7 +333,7 @@ class SeesawSimulation {
     this.tiltAngleEl.textContent = this.angle.toFixed(2) + "°";
     // this restores the log
     if (Array.isArray(data.log)) {
-      this.logEntries = data.log;
+      this.logEntries = [...data.log];
     } else {
       this.logEntries = [];
     }
@@ -396,7 +416,7 @@ class SeesawSimulation {
     }
   }
   addLogEntry(text) {
-    const entry = `${text}`;
+    const entry = text;
     this.logEntries.unshift(entry);
     if (this.logEntries.length > 100) {
       this.logEntries.pop();
@@ -408,6 +428,25 @@ class SeesawSimulation {
     this.logBox.innerHTML = this.logEntries
       .map(e => `<div class="log-entry">${e}</div>`)
       .join("");
+  }
+  onHover(e) {
+    if (!this.hoverOffsetEl) return;
+    const rect = this.plankArea.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const dx = e.clientX - centerX;
+    const dy = e.clientY - centerY;
+    const theta = (this.angle * Math.PI) / 180;
+    const proj = dx * Math.cos(theta) + dy * Math.sin(theta);
+    const halfLength = this.plankArea.clientWidth / 2;
+    let offsetFromPivot = Math.max(-halfLength, Math.min(halfLength, proj));
+    const px = Math.round(offsetFromPivot);
+    const sign = px > 0 ? "+" : px < 0 ? "" : "";
+    this.hoverOffsetEl.textContent = `Distance from center: ${sign}${px} px`;
+  }
+  clearHover() {
+    if (!this.hoverOffsetEl) return;
+    this.hoverOffsetEl.textContent = "Distance from center: 0 px";
   }
   onClick(e) {
     if (this.isPaused || this.isDropping) return;
@@ -506,6 +545,10 @@ class SeesawSimulation {
     this.rightWeightEl.textContent = "0 kg";
     this.leftTorqueText.textContent = "Left torque: 0";
     this.rightTorqueText.textContent = "Right torque: 0";
+    // this resets hover
+    if (this.hoverOffsetEl) {
+      this.hoverOffsetEl.textContent = "Hover: 0 px";
+    }
     // this will reset the next weight
     this.nextWeight = this.generateRandomWeight();
     this.nextWeightEl.textContent = this.nextWeight + " kg";
@@ -542,7 +585,10 @@ class SeesawSimulation {
   }
   saveState() {
     try {
-      const data = this.createSnapshot();
+      const data = {
+        history: this.history,
+        historyIndex: this.historyIndex
+      };
       localStorage.setItem(this.storageKey, JSON.stringify(data));
     } catch (e) {
       console.error("Failed to save seesaw state", e);
@@ -553,8 +599,24 @@ class SeesawSimulation {
       const raw = localStorage.getItem(this.storageKey);
       if (!raw) return;
       const data = JSON.parse(raw);
-      if (!data || !Array.isArray(data.objects)) return;
-      this.restoreSnapshot(data);
+      if (!data) return;
+      if (Array.isArray(data.history)) {
+        this.history = data.history;
+        this.historyIndex =
+          typeof data.historyIndex === "number"
+            ? data.historyIndex
+            : this.history.length - 1;
+        const snap = this.history[this.historyIndex];
+        if (snap) {
+          this.restoreSnapshot(snap);
+        }
+        this.updateUndoRedoButtons();
+      } else if (Array.isArray(data.objects)) {
+        this.history = [data];
+        this.historyIndex = 0;
+        this.restoreSnapshot(data);
+        this.updateUndoRedoButtons();
+      }
     } catch (e) {
       console.error("Failed to load seesaw state", e);
     }
