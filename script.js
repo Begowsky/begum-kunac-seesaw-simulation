@@ -39,6 +39,7 @@ class SeesawObject {
     this.offsetX = params.offsetX;
     this.plankArea = params.plankArea;
     this.color = params.color || this.randomColor();
+    this.shapeType = params.shapeType || "circle";
     this.size = sizeFromWeight(this.weight);
     this.x = params.x;
     this.y = params.y;
@@ -49,9 +50,14 @@ class SeesawObject {
     this.el.style.position = "absolute";
     this.el.style.width = this.size + "px";
     this.el.style.height = this.size + "px";
+    this.el.style.borderRadius =
+      this.shapeType === "square" ? "4px" : "50%";
     if (this.x == null || this.y == null) {
       const halfLength = this.plankArea.clientWidth / 2;
-      const landing = 6 - this.size;
+      const plankTop = 6;
+      const overlap = 1;
+      const bottomY = plankTop + overlap;
+      const landing = bottomY - this.size;
       this.x = halfLength + this.offsetX - this.size / 2;
       this.y = landing;
     }
@@ -85,29 +91,54 @@ class SeesawSimulation {
     this.scale = document.getElementById("scale");
     this.pauseBtn = document.getElementById("pauseBtn");
     this.resetBtn = document.getElementById("resetBtn");
+    // added control options
+    this.shapeRadios = document.querySelectorAll('input[name="shape"]');
+    this.lengthSlider = document.getElementById("lengthSlider");
+    this.lengthValue = document.getElementById("lengthValue");
+    this.speedRadios = document.querySelectorAll('input[name="speed"]');
+    this.logBox = document.getElementById("logBox");
+    const checkedShape = document.querySelector('input[name="shape"]:checked');
+    this.shapeType = checkedShape ? checkedShape.value : "circle";
+    const checkedSpeed = document.querySelector('input[name="speed"]:checked');
+    this.speedSetting = checkedSpeed ? checkedSpeed.value : "medium";
     this.angle = 0;
     this.targetAngle = 0;
     this.angVel = 0;
     this.MAX_ANGLE = 30;
     this.ANGLE_DIV = 10;
     this.stiffness = 0.02;
-    this.damping = 0.6;
+    this.damping = this.dampingFromSpeed(this.speedSetting);
     this.isPaused = false;
     this.isDropping = false;
     this.torqueCalc = new TorqueCalculator();
     // this will generate first next weight
     this.nextWeight = this.generateRandomWeight();
     this.nextWeightEl.textContent = this.nextWeight + " kg";
+    if (this.lengthSlider && this.lengthValue) {
+      const w = this.plankArea.clientWidth;
+      this.lengthSlider.value = w;
+      this.lengthValue.textContent = String(w);
+    }
+    // this holds the log list
+    this.logEntries = [];
     this.renderScale();
     this.bindEvents();
     // this will restore the state
     this.loadState();
     this.positionPlankRelativeToGround();
     this.positionPivot();
+    this.updateSliderEnabled();
+    // this will render the log
+    this.renderLog();
     // after restoring page is shown
     document.body.classList.remove("preload");
     this.animate = this.animate.bind(this);
     requestAnimationFrame(this.animate);
+  }
+  dampingFromSpeed(speed) {
+    if (speed === "slow") return 0.1;
+    if (speed === "fast") return 0.7;
+    return 0.4; // medium speed is the default
   }
   generateRandomWeight() {
     return Math.floor(Math.random() * 10) + 1;
@@ -132,7 +163,80 @@ class SeesawSimulation {
     });
     this.pauseBtn.addEventListener("click", () => this.togglePause());
     this.resetBtn.addEventListener("click", () => this.resetSimulation());
+    // radios for shape choice
+    this.shapeRadios.forEach((r) => {
+      r.addEventListener("change", (e) => {
+        if (e.target.checked) {
+          this.setShape(e.target.value);
+        }
+      });
+    })
+    // radios for speed choice
+    this.speedRadios.forEach((r) => {
+      r.addEventListener("change", (e) => {
+        if (e.target.checked) {
+          this.setSpeed(e.target.value);
+        }
+      });
+    });
+    // slider for length
+    if (this.lengthSlider) {
+      this.lengthSlider.addEventListener("input", (e) => {
+        // can change the length if there are no weight objects
+        if (this.lengthSlider.disabled) return;
+        const w = parseInt(e.target.value, 10) || 640;
+        this.setPlankWidth(w);
+        this.saveState();
+      });
+    }
     window.addEventListener("beforeunload", () => this.saveState());
+  }
+  // it should be disabled if there are weight objects on the seesaw
+  updateSliderEnabled() {
+    if (!this.lengthSlider) return;
+    const hasObjects = this.torqueCalc.objects.length > 0;
+    this.lengthSlider.disabled = hasObjects;
+  }
+  setShape(shape) {
+    this.shapeType = shape === "square" ? "square" : "circle";
+    const radiusValue = this.shapeType === "square" ? "4px" : "50%";
+    this.shapeRadios.forEach((r) => {
+      r.checked = r.value === this.shapeType;
+    });
+    for (const obj of this.torqueCalc.objects) {
+      obj.shapeType = this.shapeType;
+      obj.el.style.borderRadius = radiusValue;
+    }
+    this.saveState();
+  }
+  setSpeed(speed) {
+    if (!["slow", "medium", "fast"].includes(speed)) {
+      speed = "medium";
+    }
+    this.speedSetting = speed;
+    this.damping = this.dampingFromSpeed(speed);
+    this.speedRadios.forEach((r) => {
+      r.checked = r.value === speed;
+    });
+    this.saveState();
+  }
+  setPlankWidth(width) {
+    this.plankArea.style.width = width + "px";
+    this.renderScale();
+    const halfLength = width / 2;
+    for (const obj of this.torqueCalc.objects) {
+      const size = obj.size;
+      obj.x = halfLength + obj.offsetX - size / 2;
+      obj.el.style.left = obj.x + "px";
+    }
+    this.positionPlankRelativeToGround();
+    this.positionPivot();
+    if (this.lengthSlider) {
+      this.lengthSlider.value = width;
+    }
+    if (this.lengthValue) {
+      this.lengthValue.textContent = String(width);
+    }
   }
   positionPlankRelativeToGround() {
     const wrap = this.plankArea.parentElement;
@@ -169,6 +273,20 @@ class SeesawSimulation {
       this.pivotBase.style.height = `${height}px`;
     }
   }
+  addLogEntry(text) {
+    const entry = `${text}`;
+    this.logEntries.unshift(entry);
+    if (this.logEntries.length > 100) {
+      this.logEntries.pop();
+    }
+    this.renderLog();
+  }
+  renderLog() {
+    if (!this.logBox) return;
+    this.logBox.innerHTML = this.logEntries
+      .map(e => `<div class="log-entry">${e}</div>`)
+      .join("");
+  }
   onClick(e) {
     if (this.isPaused || this.isDropping) return;
     const rect = this.plankArea.getBoundingClientRect();
@@ -184,17 +302,22 @@ class SeesawSimulation {
       offsetFromPivot = offsetFromPivot >= 0 ? 1 : -1;
     }
     const weight = this.nextWeight;
+    const side = offsetFromPivot < 0 ? "left" : "right";
+    const px = Math.round(Math.abs(offsetFromPivot));
+    this.addLogEntry(`${weight}kg dropped on ${side} side at ${px}px from center`);
     const obj = new SeesawObject({
       weight,
       offsetX: offsetFromPivot,
       plankArea: this.plankArea,
       x: null,
       y: null,
-      color: null
+      color: null,
+      shapeType: this.shapeType
     });
     obj.el.style.opacity = "0";
     this.torqueCalc.addObject(obj);
     this.updateTargetAngle();
+    this.updateSliderEnabled();
     const finalRect = obj.el.getBoundingClientRect();
     const ghostSize = sizeFromWeight(obj.weight);
     const ghost = document.createElement("div");
@@ -204,6 +327,8 @@ class SeesawSimulation {
     ghost.style.position = "fixed";
     ghost.style.width = ghostSize + "px";
     ghost.style.height = ghostSize + "px";
+    ghost.style.borderRadius =
+      this.shapeType === "square" ? "4px" : "50%";
     ghost.style.left = finalRect.left + "px";
     ghost.style.top = (finalRect.top - ghostSize * 3) + "px";
     ghost.style.transition = "top 500ms cubic-bezier(.2,.9,.2,1)";
@@ -264,6 +389,10 @@ class SeesawSimulation {
     this.isPaused = false;
     this.isDropping = false;
     this.pauseBtn.textContent = "Pause";
+    // this resets the logs
+    this.logEntries = [];
+    this.renderLog();
+    this.updateSliderEnabled();
     this.saveState();
     // this recalculates the geometry after resetting
     this.positionPlankRelativeToGround();
@@ -275,7 +404,6 @@ class SeesawSimulation {
         weight: o.weight,
         offsetX: o.offsetX,
         x: o.x,
-        y: o.y,
         color: o.color
       }));
       const data = {
@@ -283,7 +411,11 @@ class SeesawSimulation {
         nextWeight: this.nextWeight,
         angle: this.angle,
         targetAngle: this.targetAngle,
-        isPaused: this.isPaused
+        isPaused: this.isPaused,
+        shapeType: this.shapeType,
+        plankWidth: this.plankArea.clientWidth,
+        speedSetting: this.speedSetting,
+        log: this.logEntries
       };
       localStorage.setItem(this.storageKey, JSON.stringify(data));
     } catch (e) {
@@ -296,6 +428,24 @@ class SeesawSimulation {
       if (!raw) return;
       const data = JSON.parse(raw);
       if (!data || !Array.isArray(data.objects)) return;
+      if (data.shapeType === "square" || data.shapeType === "circle") {
+        this.shapeType = data.shapeType;
+      }
+      if (typeof data.plankWidth === "number") {
+        this.setPlankWidth(data.plankWidth);
+      }
+      if (["slow", "medium", "fast"].includes(data.speedSetting)) {
+        this.speedSetting = data.speedSetting;
+      } else {
+        this.speedSetting = "medium";
+      }
+      this.damping = this.dampingFromSpeed(this.speedSetting);
+      this.shapeRadios.forEach((r) => {
+        r.checked = r.value === this.shapeType;
+      });
+      this.speedRadios.forEach((r) => {
+        r.checked = r.value === this.speedSetting;
+      });
       this.torqueCalc.clear();
       for (const o of data.objects) {
         if (typeof o.weight !== "number" || typeof o.offsetX !== "number") continue;
@@ -303,9 +453,10 @@ class SeesawSimulation {
           weight: o.weight,
           offsetX: o.offsetX,
           plankArea: this.plankArea,
-          x: o.x,
-          y: o.y,
-          color: o.color
+          x: null,
+          y: null,
+          color: o.color,
+          shapeType: this.shapeType
         });
         this.torqueCalc.addObject(obj);
       }
@@ -325,6 +476,12 @@ class SeesawSimulation {
       this.updateTargetAngle();
       this.plankArea.style.transform = `rotate(${this.angle}deg)`;
       this.tiltAngleEl.textContent = this.angle.toFixed(2) + "°";
+      if (Array.isArray(data.log)) {
+        this.logEntries = data.log;
+      } else {
+        this.logEntries = [];
+      }
+      this.updateSliderEnabled();
     } catch (e) {
       console.error("Failed to load seesaw state", e);
     }
