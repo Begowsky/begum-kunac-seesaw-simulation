@@ -158,6 +158,8 @@ class SeesawSimulation {
     document.body.classList.remove("preload");
     this.animate = this.animate.bind(this);
     requestAnimationFrame(this.animate);
+    this.baseHitSound = new Audio("thud.mp3");
+    this.baseHitSound.volume = 0.7; 
   }
   dampingFromSpeed(speed) {
     if (speed === "slow") return 0.1;
@@ -503,6 +505,7 @@ class SeesawSimulation {
       ghost.remove();
       obj.el.style.opacity = "1";
       this.isDropping = false;
+      this.playHitSound(obj.weight);
     }, 550);
     // this will generate next weight
     this.nextWeight = this.generateRandomWeight();
@@ -631,6 +634,20 @@ class SeesawSimulation {
       this.tiltAngleEl.textContent = this.angle.toFixed(2) + "°";
     }
     requestAnimationFrame(this.animate);
+  }
+  playHitSound(weight) {
+    if (!this.baseHitSound) return;
+    // from high to low pitch
+    const minRate = 0.7;
+    const maxRate = 1.8;
+    const clamped = Math.max(1, Math.min(10, weight));
+    const t = (clamped - 1) / 9;
+    const playbackRate = maxRate - t * (maxRate - minRate);
+    const sound = this.baseHitSound.cloneNode();
+    sound.playbackRate = playbackRate;
+    sound.volume = this.baseHitSound.volume;
+    sound.play().catch(() => {
+    });
   }
 }
 
