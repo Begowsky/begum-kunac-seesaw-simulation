@@ -19,7 +19,7 @@ body.preload{
 
 .container{ width:980px; max-width:95vw; padding:18px; box-sizing:border-box; display:flex; gap:18px; }
 .panel{
-  width:260px; min-width:240px; background:var(--panel);
+  width:315px; min-width:295px; background:var(--panel);
   border-radius:12px; padding:14px;
   box-shadow:0 6px 18px rgba(30,40,60,0.08);
 }
@@ -90,7 +90,8 @@ body.preload{
   padding: 6px;
   font-size: 12px;
   overflow-y: auto;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-word;
   line-height: 1.35;
 }
 .log-entry {

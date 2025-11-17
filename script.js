@@ -465,7 +465,7 @@ class SeesawSimulation {
     const weight = this.nextWeight;
     const side = offsetFromPivot < 0 ? "left" : "right";
     const px = Math.round(Math.abs(offsetFromPivot));
-    this.addLogEntry(`${weight}kg dropped on ${side} side at ${px}px from center`);
+    this.addLogEntry(`${weight} kg dropped on ${side} side at ${px} px from center`);
     const obj = new SeesawObject({
       weight,
       offsetX: offsetFromPivot,
