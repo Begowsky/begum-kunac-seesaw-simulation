@@ -91,6 +91,8 @@ class SeesawSimulation {
     this.scale = document.getElementById("scale");
     this.pauseBtn = document.getElementById("pauseBtn");
     this.resetBtn = document.getElementById("resetBtn");
+    this.undoBtn = document.getElementById("undoBtn");
+    this.redoBtn = document.getElementById("redoBtn");
     // added control options
     this.shapeRadios = document.querySelectorAll('input[name="shape"]');
     this.lengthSlider = document.getElementById("lengthSlider");
@@ -121,6 +123,9 @@ class SeesawSimulation {
     }
     // this holds the log list
     this.logEntries = [];
+    // this holds the history for undo/redo
+    this.history = [];
+    this.historyIndex = -1;
     this.renderScale();
     this.bindEvents();
     // this will restore the state
@@ -130,7 +135,8 @@ class SeesawSimulation {
     this.updateSliderEnabled();
     // this will render the log
     this.renderLog();
-    // after restoring page is shown
+    this.pushHistory();
+    // after restoring page is shown)
     document.body.classList.remove("preload");
     this.animate = this.animate.bind(this);
     requestAnimationFrame(this.animate);
@@ -163,11 +169,19 @@ class SeesawSimulation {
     });
     this.pauseBtn.addEventListener("click", () => this.togglePause());
     this.resetBtn.addEventListener("click", () => this.resetSimulation());
+    if (this.undoBtn) {
+      this.undoBtn.addEventListener("click", () => this.undo());
+    }
+    if (this.redoBtn) {
+      this.redoBtn.addEventListener("click", () => this.redo());
+    }
     // radios for shape choice
     this.shapeRadios.forEach((r) => {
       r.addEventListener("change", (e) => {
         if (e.target.checked) {
           this.setShape(e.target.value);
+          this.pushHistory();
+          this.saveState();
         }
       });
     })
@@ -176,6 +190,8 @@ class SeesawSimulation {
       r.addEventListener("change", (e) => {
         if (e.target.checked) {
           this.setSpeed(e.target.value);
+          this.pushHistory();
+          this.saveState();
         }
       });
     });
@@ -186,6 +202,7 @@ class SeesawSimulation {
         if (this.lengthSlider.disabled) return;
         const w = parseInt(e.target.value, 10) || 640;
         this.setPlankWidth(w);
+        this.pushHistory();
         this.saveState();
       });
     }
@@ -197,6 +214,113 @@ class SeesawSimulation {
     const hasObjects = this.torqueCalc.objects.length > 0;
     this.lengthSlider.disabled = hasObjects;
   }
+  updateUndoRedoButtons() {
+    if (this.undoBtn) {
+      this.undoBtn.disabled = this.historyIndex <= 0;
+    }
+    if (this.redoBtn) {
+      this.redoBtn.disabled =
+        this.historyIndex < 0 || this.historyIndex >= this.history.length - 1;
+    }
+  }
+  // this takes the snapshot of the current state for the history (undo/redo) and the local storage
+  createSnapshot() {
+    const serializableObjects = this.torqueCalc.objects.map((o) => ({
+      weight: o.weight,
+      offsetX: o.offsetX,
+      x: o.x,
+      color: o.color
+    }));
+    return {
+      objects: serializableObjects,
+      nextWeight: this.nextWeight,
+      angle: this.angle,
+      targetAngle: this.targetAngle,
+      isPaused: this.isPaused,
+      shapeType: this.shapeType,
+      plankWidth: this.plankArea.clientWidth,
+      speedSetting: this.speedSetting,
+      log: [...this.logEntries]
+    };
+  }
+  // this pushes the snapshot of the current state on history
+  pushHistory() {
+    const snap = this.createSnapshot();
+    if (this.historyIndex < this.history.length - 1) {
+      this.history = this.history.slice(0, this.historyIndex + 1);
+    }
+    this.history.push(snap);
+    this.historyIndex = this.history.length - 1;
+    this.updateUndoRedoButtons();
+  }
+  restoreSnapshot(data) { // undo, redo, loadState
+    if (!data) return;
+    // existing objects are cleared first
+    for (const obj of this.torqueCalc.objects) {
+      if (obj.remove) obj.remove();
+    }
+    this.torqueCalc.clear();
+    // parameters are restored 
+    if (data.shapeType === "square" || data.shapeType === "circle") {
+      this.shapeType = data.shapeType;
+    }
+    if (typeof data.plankWidth === "number") {
+      this.setPlankWidth(data.plankWidth);
+    }
+    if (["slow", "medium", "fast"].includes(data.speedSetting)) {
+      this.speedSetting = data.speedSetting;
+    } else {
+      this.speedSetting = "medium";
+    }
+    this.damping = this.dampingFromSpeed(this.speedSetting);
+    this.shapeRadios.forEach((r) => {
+      r.checked = r.value === this.shapeType;
+    });
+    this.speedRadios.forEach((r) => {
+      r.checked = r.value === this.speedSetting;
+    });
+    // this recreates the objects
+    if (Array.isArray(data.objects)) {
+      for (const o of data.objects) {
+        if (typeof o.weight !== "number" || typeof o.offsetX !== "number") continue;
+        const obj = new SeesawObject({
+          weight: o.weight,
+          offsetX: o.offsetX,
+          plankArea: this.plankArea,
+          x: null,
+          y: null,
+          color: o.color,
+          shapeType: this.shapeType
+        });
+        this.torqueCalc.addObject(obj);
+      }
+    }
+    // this restores the next weight
+    if (typeof data.nextWeight === "number") {
+      this.nextWeight = data.nextWeight;
+    } else {
+      this.nextWeight = this.generateRandomWeight();
+    }
+    this.nextWeightEl.textContent = this.nextWeight + " kg";
+    // this restores flags and the angle
+    this.isPaused = !!data.isPaused;
+    this.pauseBtn.textContent = this.isPaused ? "Resume" : "Pause";
+    this.angle = typeof data.angle === "number" ? data.angle : 0;
+    this.targetAngle = typeof data.targetAngle === "number" ? data.targetAngle : this.angle;
+    this.angVel = 0;
+    this.updateTargetAngle();
+    this.plankArea.style.transform = `rotate(${this.angle}deg)`;
+    this.tiltAngleEl.textContent = this.angle.toFixed(2) + "°";
+    // this restores the log
+    if (Array.isArray(data.log)) {
+      this.logEntries = data.log;
+    } else {
+      this.logEntries = [];
+    }
+    this.renderLog();
+    this.updateSliderEnabled();
+    this.updateUndoRedoButtons();
+  }
   setShape(shape) {
     this.shapeType = shape === "square" ? "square" : "circle";
     const radiusValue = this.shapeType === "square" ? "4px" : "50%";
@@ -207,7 +331,6 @@ class SeesawSimulation {
       obj.shapeType = this.shapeType;
       obj.el.style.borderRadius = radiusValue;
     }
-    this.saveState();
   }
   setSpeed(speed) {
     if (!["slow", "medium", "fast"].includes(speed)) {
@@ -218,7 +341,6 @@ class SeesawSimulation {
     this.speedRadios.forEach((r) => {
       r.checked = r.value === speed;
     });
-    this.saveState();
   }
   setPlankWidth(width) {
     this.plankArea.style.width = width + "px";
@@ -346,6 +468,7 @@ class SeesawSimulation {
     // this will generate next weight
     this.nextWeight = this.generateRandomWeight();
     this.nextWeightEl.textContent = this.nextWeight + " kg";
+    this.pushHistory();
     this.saveState();
   }
   updateTargetAngle() {
@@ -363,6 +486,7 @@ class SeesawSimulation {
   togglePause() {
     this.isPaused = !this.isPaused;
     this.pauseBtn.textContent = this.isPaused ? "Resume" : "Pause";
+    this.pushHistory();
     this.saveState();
   }
   resetSimulation() {
@@ -393,30 +517,32 @@ class SeesawSimulation {
     this.logEntries = [];
     this.renderLog();
     this.updateSliderEnabled();
+    // this resets the history for this cleaned state
+    this.history = [];
+    this.historyIndex = -1;
+    this.pushHistory();
     this.saveState();
     // this recalculates the geometry after resetting
     this.positionPlankRelativeToGround();
     this.positionPivot();
   }
+  undo() {
+    if (this.historyIndex <= 0) return;
+    this.historyIndex -= 1;
+    const snap = this.history[this.historyIndex];
+    this.restoreSnapshot(snap);
+    this.saveState();
+  }
+  redo() {
+    if (this.historyIndex < 0 || this.historyIndex >= this.history.length - 1) return;
+    this.historyIndex += 1;
+    const snap = this.history[this.historyIndex];
+    this.restoreSnapshot(snap);
+    this.saveState();
+  }
   saveState() {
     try {
-      const serializableObjects = this.torqueCalc.objects.map((o) => ({
-        weight: o.weight,
-        offsetX: o.offsetX,
-        x: o.x,
-        color: o.color
-      }));
-      const data = {
-        objects: serializableObjects,
-        nextWeight: this.nextWeight,
-        angle: this.angle,
-        targetAngle: this.targetAngle,
-        isPaused: this.isPaused,
-        shapeType: this.shapeType,
-        plankWidth: this.plankArea.clientWidth,
-        speedSetting: this.speedSetting,
-        log: this.logEntries
-      };
+      const data = this.createSnapshot();
       localStorage.setItem(this.storageKey, JSON.stringify(data));
     } catch (e) {
       console.error("Failed to save seesaw state", e);
@@ -428,60 +554,7 @@ class SeesawSimulation {
       if (!raw) return;
       const data = JSON.parse(raw);
       if (!data || !Array.isArray(data.objects)) return;
-      if (data.shapeType === "square" || data.shapeType === "circle") {
-        this.shapeType = data.shapeType;
-      }
-      if (typeof data.plankWidth === "number") {
-        this.setPlankWidth(data.plankWidth);
-      }
-      if (["slow", "medium", "fast"].includes(data.speedSetting)) {
-        this.speedSetting = data.speedSetting;
-      } else {
-        this.speedSetting = "medium";
-      }
-      this.damping = this.dampingFromSpeed(this.speedSetting);
-      this.shapeRadios.forEach((r) => {
-        r.checked = r.value === this.shapeType;
-      });
-      this.speedRadios.forEach((r) => {
-        r.checked = r.value === this.speedSetting;
-      });
-      this.torqueCalc.clear();
-      for (const o of data.objects) {
-        if (typeof o.weight !== "number" || typeof o.offsetX !== "number") continue;
-        const obj = new SeesawObject({
-          weight: o.weight,
-          offsetX: o.offsetX,
-          plankArea: this.plankArea,
-          x: null,
-          y: null,
-          color: o.color,
-          shapeType: this.shapeType
-        });
-        this.torqueCalc.addObject(obj);
-      }
-      if (typeof data.nextWeight === "number") {
-        this.nextWeight = data.nextWeight;
-      } else {
-        this.nextWeight = this.generateRandomWeight();
-      }
-      this.nextWeightEl.textContent = this.nextWeight + " kg";
-      this.isPaused = !!data.isPaused;
-      this.pauseBtn.textContent = this.isPaused ? "Resume" : "Pause";
-      this.angle = typeof data.angle === "number" ? data.angle : 0;
-      this.targetAngle = typeof data.targetAngle === "number"
-        ? data.targetAngle
-        : this.angle;
-      this.angVel = 0;
-      this.updateTargetAngle();
-      this.plankArea.style.transform = `rotate(${this.angle}deg)`;
-      this.tiltAngleEl.textContent = this.angle.toFixed(2) + "°";
-      if (Array.isArray(data.log)) {
-        this.logEntries = data.log;
-      } else {
-        this.logEntries = [];
-      }
-      this.updateSliderEnabled();
+      this.restoreSnapshot(data);
     } catch (e) {
       console.error("Failed to load seesaw state", e);
     }
