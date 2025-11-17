@@ -550,7 +550,7 @@ class SeesawSimulation {
     this.rightTorqueText.textContent = "Right torque: 0";
     // this resets hover
     if (this.hoverOffsetEl) {
-      this.hoverOffsetEl.textContent = "Hover: 0 px";
+      this.hoverOffsetEl.textContent = "Distance from center: 0 px";
     }
     // this will reset the next weight
     this.nextWeight = this.generateRandomWeight();
