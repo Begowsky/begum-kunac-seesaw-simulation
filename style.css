@@ -17,7 +17,7 @@ body.preload{
   visibility:hidden;
 }
 
-.container{ width:980px; max-width:95vw; padding:18px; box-sizing:border-box; display:flex; gap:18px; }
+.container{ width:980px; max-width:95vw; padding:18px; box-sizing:border-box; display:flex; gap:50px }
 .panel{
   width:315px; min-width:295px; background:var(--panel);
   border-radius:12px; padding:14px;
