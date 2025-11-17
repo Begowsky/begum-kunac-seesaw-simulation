@@ -24,10 +24,10 @@ I used ChatGPT for minor help, such as debugging specific syntax issues in JavaS
 
 # PROJECT STRUCTURE
 begum-kunac-seesaw-simulation
-  index.html
-  style.css
-  script.js
-  README.md
-  thud.mp3
+  - index.html
+  - style.css
+  - script.js
+  - README.md
+  - thud.mp3
 
 
